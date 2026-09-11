@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0
+
+- Added explicit `port=80` to announced network controllers.
+- Controller now carries both `ip` and `port` endpoint metadata.
+- Reverted experimental v0.3 paired/updateController lifecycle.
+- Restored original-style addController → announceController flow.
+- Added endpoint diagnostics before announcement.
+- TCP connection now uses `controller.port`.
+- Added BOOT endpoint diagnostics.
+
 ## 0.3.0
 
 - Fixed network controller lifecycle.

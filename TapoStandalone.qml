@@ -29,7 +29,7 @@ Item {
             Text {
                 width: panelWidth
                 wrapMode: Text.WordWrap
-                text: "v0.3.0 • Direct LAN • KLAP v2 • Paired network-device lifecycle • No tapo-rest."
+                text: "v0.4.0 • Direct LAN • KLAP v2 • Explicit TCP endpoint metadata • No tapo-rest."
                 color: "#8a8a8a"
                 font.family: "Poppins"
                 font.pixelSize: 11

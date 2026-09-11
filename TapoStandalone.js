@@ -2,7 +2,7 @@ import { tcp } from "@SignalRGB/tcp";
 
 // =============================================================================
 // SignalRGB <-> TP-Link Tapo DIRECT LAN
-// v0.3.0 - Standalone KLAP v2
+// v0.4.0 - Standalone KLAP v2
 //
 // Configuration is entered from the Tapo Standalone SignalRGB service page.
 // No tapo-rest, no localhost bridge, no API-key server.
@@ -15,7 +15,7 @@ var plugPower = "On";
 
 export function Name() { return "Tapo Standalone"; }
 export function Publisher() { return "Ruzgar Labs"; }
-export function Version() { return "0.3.0"; }
+export function Version() { return "0.4.0"; }
 export function Type() { return "network"; }
 export function SubdeviceController() { return true; }
 export function ImageUrl() { return "https://i.ibb.co/0ytq0n9Q/tapo.jpg"; }
@@ -129,6 +129,7 @@ export function DiscoveryService() {
                 deviceName: displayName,
                 deviceType: cfg.type,
                 ip: cfg.ip,
+                port: 80,
                 email: disc.email,
                 password: disc.password,
                 frameSkip: disc.frameSkip,
@@ -148,7 +149,7 @@ export function DiscoveryService() {
         loadSettings();
 
         service.log("[Tapo Standalone][SERVICE] ========================================");
-        service.log("[Tapo Standalone][SERVICE] v0.3.0 standalone KLAP v2");
+        service.log("[Tapo Standalone][SERVICE] v0.4.0 standalone KLAP v2");
         service.log("[Tapo Standalone][SERVICE] Publisher: " + Publisher());
         service.log("[Tapo Standalone][SERVICE] Account: " + maskEmail(disc.email) + " (password hidden)");
         service.log("[Tapo Standalone][SERVICE] frameSkip=" + disc.frameSkip + " minDelta=" + disc.minDelta + " reconnectMs=" + disc.reconnectMs + " logLevel=" + disc.logLevel);
@@ -161,36 +162,24 @@ export function DiscoveryService() {
         for (const cont of service.controllers) {
             const bridge = cont.obj;
 
-            // Match SignalRGB's working network-addon lifecycle:
-            // controller -> service.updateController() -> announceController().
-            if (!bridge.initialized) {
-                bridge.initialized = true;
-
+            if (!bridge.announced) {
                 service.log(
-                    "[Tapo Standalone][SERVICE] Backend sync: " +
-                    bridge.name +
-                    " [" + bridge.deviceType.toUpperCase() + "] @ " +
-                    bridge.ip +
-                    " paired=" + bridge.paired
+                    "[Tapo Standalone][SERVICE] About to announce controller: " +
+                    "id=" + bridge.id +
+                    " name=" + bridge.name +
+                    " type=" + bridge.deviceType.toUpperCase() +
+                    " ip=" + bridge.ip +
+                    " port=" + bridge.port
                 );
 
-                service.updateController(bridge);
-
-                service.log(
-                    "[Tapo Standalone][SERVICE] Backend update complete for id=" +
-                    bridge.id +
-                    "; waiting for SignalRGB device instance creation."
-                );
-
-                service.log(
-                    "[Tapo Standalone][SERVICE] Announcing linked device: " +
-                    bridge.name +
-                    " [" + bridge.deviceType.toUpperCase() + "] @ " +
-                    bridge.ip
-                );
-
-                service.announceController(bridge);
                 bridge.announced = true;
+                service.announceController(bridge);
+
+                service.log(
+                    "[Tapo Standalone][SERVICE] announceController returned for " +
+                    bridge.name +
+                    "; waiting for device Initialize()."
+                );
             }
         }
     };
@@ -202,25 +191,18 @@ export function DiscoveryService() {
             const controllerObj = new TapoDirectController(value);
 
             service.log(
-                "[Tapo Standalone][SERVICE] Creating controller id=" +
-                controllerObj.id +
-                " paired=" +
-                controllerObj.paired
+                "[Tapo Standalone][SERVICE] Creating controller: " +
+                "id=" + controllerObj.id +
+                " ip=" + controllerObj.ip +
+                " port=" + controllerObj.port
             );
 
             service.addController(controllerObj);
         } else {
             service.log(
                 "[Tapo Standalone][SERVICE] Controller already exists: " +
-                value.id +
-                "; refreshing runtime configuration."
+                value.id
             );
-
-            if (existing.obj) {
-                existing.obj.updateWithValue(value);
-            } else if (existing.updateWithValue) {
-                existing.updateWithValue(value);
-            }
         }
     };
 
@@ -267,7 +249,7 @@ export function DiscoveryService() {
         service.log("[Tapo Standalone][SERVICE] Settings saved. Account=" + maskEmail(disc.email));
         service.log("[Tapo Standalone][SERVICE] L530 enabled=" + disc.l530Enabled + " name=" + disc.l530Name + " ip=" + (disc.l530Ip || "(empty)"));
         service.log("[Tapo Standalone][SERVICE] P110 enabled=" + disc.p110Enabled + " name=" + disc.p110Name + " ip=" + (disc.p110Ip || "(empty)"));
-        service.log("[Tapo Standalone][SERVICE] Rebuilding controllers using paired network lifecycle...");
+        service.log("[Tapo Standalone][SERVICE] Rebuilding controllers with ip+port endpoint metadata...");
 
         removeControllers();
         registerConfiguredDevices();
@@ -280,7 +262,10 @@ class TapoDirectController {
         this.name = value.name;
         this.deviceName = value.deviceName || value.name;
         this.deviceType = value.deviceType;
+
+        // SignalRGB network-controller endpoint metadata.
         this.ip = value.ip;
+        this.port = value.port !== undefined ? value.port : 80;
 
         this.email = value.email;
         this.password = value.password;
@@ -290,61 +275,18 @@ class TapoDirectController {
         this.reconnectMs = value.reconnectMs;
         this.logLevel = value.logLevel;
 
-        // SignalRGB network add-ons use paired/initialized controller state.
-        // These configured devices are explicitly linked by the user in our
-        // own service page, so they are considered paired immediately.
-        this.paired = true;
-        this.initialized = false;
         this.announced = false;
 
         service.log(
-            "[Tapo Standalone][SERVICE] Controller constructed: id=" +
-            this.id +
-            " name=" +
+            "[Tapo Standalone][SERVICE] Controller ready: " +
             this.name +
-            " type=" +
-            this.deviceType.toUpperCase() +
-            " ip=" +
+            " endpoint=" +
             this.ip +
-            " paired=true"
+            ":" +
+            this.port +
+            " id=" +
+            this.id
         );
-    }
-
-    updateWithValue(value) {
-        this.name = value.name || this.name;
-        this.deviceName = value.deviceName || this.deviceName;
-        this.deviceType = value.deviceType || this.deviceType;
-        this.ip = value.ip || this.ip;
-
-        this.email = value.email;
-        this.password = value.password;
-
-        this.frameSkip = value.frameSkip;
-        this.minDelta = value.minDelta;
-        this.reconnectMs = value.reconnectMs;
-        this.logLevel = value.logLevel;
-
-        this.paired = true;
-
-        service.log(
-            "[Tapo Standalone][SERVICE] Controller refreshed: " +
-            this.name +
-            " [" +
-            this.deviceType.toUpperCase() +
-            "] @ " +
-            this.ip
-        );
-
-        service.updateController(this);
-    }
-
-    update() {
-        if (this.initialized) return;
-
-        this.initialized = true;
-        service.updateController(this);
-        service.announceController(this);
-        this.announced = true;
     }
 }
 
@@ -421,10 +363,12 @@ export function Initialize() {
     device.log(
         "[Tapo Standalone][BOOT] controller.id=" +
         controller.id +
-        " paired=" +
-        controller.paired +
-        " initialized=" +
-        controller.initialized
+        " ip=" +
+        controller.ip +
+        " port=" +
+        controller.port +
+        " name=" +
+        controller.name
     );
 
     device.setName(controller.name);
@@ -432,7 +376,7 @@ export function Initialize() {
 
     logNormal("INIT", "================================================");
     logNormal("INIT", "Device name=" + controller.name);
-    logNormal("INIT", "Model=" + controller.deviceType.toUpperCase() + " target=" + controller.ip + ":80");
+    logNormal("INIT", "Model=" + controller.deviceType.toUpperCase() + " target=" + controller.ip + ":" + controller.port);
     logNormal("INIT", "Transport=TCP KLAP-v2 direct LAN");
     logNormal("INIT", "frameSkip=" + controller.frameSkip + " minDelta=" + controller.minDelta + " reconnectMs=" + controller.reconnectMs + " logLevel=" + controller.logLevel);
     logNormal("INIT", "Account configured=" + (!!controller.email) + " password configured=" + (!!controller.password));
@@ -499,7 +443,7 @@ function openSocket() {
 
     socket.on("connected", function() {
         socketConnected = true;
-        logNormal("TCP", "Connected to " + controller.ip + ":80");
+        logNormal("TCP", "Connected to " + controller.ip + ":" + controller.port);
         logDebug("TCP", "Starting KLAP authentication on persistent connection.");
         beginHandshake1();
     });
