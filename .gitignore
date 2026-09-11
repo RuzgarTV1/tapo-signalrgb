@@ -1,0 +1,15 @@
+# Local credential/config copies
+TapoStandalone.local.js
+*.local.js
+
+# Logs
+*.log
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporary syntax-check files
+*.mjs.tmp
