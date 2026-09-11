@@ -1,28 +1,17 @@
 # Security Policy
 
-## Credentials
+Credentials are entered in the Tapo Standalone SignalRGB service page and persisted via SignalRGB service settings.
 
-The plugin currently needs Tapo account credentials to derive the KLAP authentication hash.
+The plugin never logs:
+- account password
+- AES key
+- signature key
+- IV material values
+- TP_SESSIONID cookie value
 
-The configured password is stored as plaintext in the local plugin source file.
-
-### Never commit real credentials
-
-Public repository version:
-
-```js
-const TAPO_EMAIL = "your-tapo-email@example.com";
-const TAPO_PASSWORD = "YOUR_TAPO_PASSWORD";
-```
-
-Keep your real credentials only in the copy installed on your own PC.
-
-## Network scope
-
-The plugin communicates directly with configured local IPv4/IPv6 host strings over TCP port 80 using Tapo's encrypted KLAP application payload.
-
-The HTTP transport itself is not TLS; KLAP encrypts the application requests using AES-128-CBC and signs encrypted requests with SHA-256.
-
-## Reporting a vulnerability
-
-Open a GitHub issue without including real passwords, tokens, device IDs, or sensitive network details.
+Debug/Trace can include:
+- local device names and IPs
+- HTTP status codes
+- packet sizes and timing
+- KLAP states and sequence numbers
+- non-secret lighting command parameters

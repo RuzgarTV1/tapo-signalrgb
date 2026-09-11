@@ -1,39 +1,11 @@
 import { tcp } from "@SignalRGB/tcp";
 
 // =============================================================================
-// SignalRGB <-> TP-Link Tapo DIRECT LAN plugin (standalone)
-// v0.1.0 - KLAP v2
+// SignalRGB <-> TP-Link Tapo DIRECT LAN
+// v0.2.0 - Standalone KLAP v2
 //
-// No tapo-rest. No API key. No localhost bridge.
-// Talks directly to L530 / P110 over LAN TCP port 80.
-//
-// Edit ONLY the CONFIG section below.
-//
-// Compatibility:
-// - KLAP v2 devices are supported.
-// - Some newer Tapo firmware uses TPAP/SPAKE2+ instead of KLAP.
-//   Those devices are not supported yet and will fail authentication/handshake.
-// =============================================================================
-
-// =============================================================================
-// CONFIG
-// =============================================================================
-
-const TAPO_EMAIL = "your-tapo-email@example.com";
-const TAPO_PASSWORD = "YOUR_TAPO_PASSWORD";
-
-const TAPO_DEVICES = [
-    { enabled: true, type: "l530", name: "Tapo L530", ip: "192.168.1.50" },
-    { enabled: true, type: "p110", name: "Tapo P110", ip: "192.168.1.51" }
-];
-
-// About 5 RGB updates/sec at a 30 FPS render loop.
-const FRAME_SKIP = 6;
-const MIN_DELTA = 2;
-const RECONNECT_MS = 3000;
-
-// =============================================================================
-// SIGNALRGB USER CONTROLS
+// Configuration is entered from the Tapo Standalone SignalRGB service page.
+// No tapo-rest, no localhost bridge, no API-key server.
 // =============================================================================
 
 var LightingMode = "Canvas";
@@ -41,13 +13,9 @@ var forcedColor = "0099ff";
 var brightnessScale = "100";
 var plugPower = "On";
 
-// =============================================================================
-// PLUGIN META
-// =============================================================================
-
 export function Name() { return "Tapo Standalone"; }
-export function Publisher() { return "SignalRGB Community"; }
-export function Version() { return "0.1.0"; }
+export function Publisher() { return "Ruzgar Labs"; }
+export function Version() { return "0.2.0"; }
 export function Type() { return "network"; }
 export function SubdeviceController() { return true; }
 export function ImageUrl() { return "https://i.ibb.co/0ytq0n9Q/tapo.jpg"; }
@@ -57,70 +25,136 @@ export function Size() { return [1, 1]; }
 
 export function ControllableParameters() {
     return [
-        {
-            property: "LightingMode",
-            group: "lighting",
-            label: "Lighting Mode",
-            type: "combobox",
-            values: ["Canvas", "Forced"],
-            default: "Canvas"
-        },
-        {
-            property: "forcedColor",
-            group: "lighting",
-            label: "Forced Color",
-            type: "color",
-            default: "0099ff"
-        },
-        {
-            property: "brightnessScale",
-            group: "lighting",
-            label: "Brightness (%)",
-            type: "number",
-            min: "0",
-            max: "100",
-            step: "1",
-            default: "100"
-        },
-        {
-            property: "plugPower",
-            group: "lighting",
-            label: "P110 Power",
-            type: "combobox",
-            values: ["On", "Off"],
-            default: "On"
-        }
+        { property: "LightingMode", group: "lighting", label: "Lighting Mode", type: "combobox", values: ["Canvas", "Forced"], default: "Canvas" },
+        { property: "forcedColor", group: "lighting", label: "Forced Color", type: "color", default: "0099ff" },
+        { property: "brightnessScale", group: "lighting", label: "Brightness (%)", type: "number", min: "0", max: "100", step: "1", default: "100" },
+        { property: "plugPower", group: "lighting", label: "P110 Power", type: "combobox", values: ["On", "Off"], default: "On" }
     ];
 }
-
-// =============================================================================
-// STATIC DEVICE REGISTRATION - no discovery service / no bridge process
-// =============================================================================
 
 export function DiscoveryService() {
     const disc = this;
     this.IconUrl = ImageUrl();
 
-    this.Initialize = function() {
-        service.log("[Tapo Standalone] v0.1.0 loading");
-        service.log("[Tapo Standalone] No tapo-rest / direct KLAP v2 mode");
+    this.email = "";
+    this.password = "";
 
-        for (const cfg of TAPO_DEVICES) {
-            if (!cfg.enabled) continue;
-            const type = String(cfg.type || "").toLowerCase();
-            const ip = String(cfg.ip || "").trim();
-            if ((type !== "l530" && type !== "p110") || !ip) {
-                service.log("[Tapo Standalone] Invalid config: " + JSON.stringify(cfg));
+    this.l530Enabled = true;
+    this.l530Name = "Tapo L530";
+    this.l530Ip = "";
+
+    this.p110Enabled = true;
+    this.p110Name = "Tapo P110";
+    this.p110Ip = "";
+
+    this.frameSkip = 6;
+    this.minDelta = 2;
+    this.reconnectMs = 3000;
+    this.logLevel = "Debug";
+
+    function setting(group, key, fallback) {
+        const v = service.getSetting(group, key);
+        return (v === undefined || v === null || v === "") ? fallback : v;
+    }
+
+    function asBool(v, fallback) {
+        if (v === undefined || v === null || v === "") return fallback;
+        if (typeof v === "boolean") return v;
+        return String(v).toLowerCase() === "true" || String(v) === "1";
+    }
+
+    function clampInt(v, fallback, lo, hi) {
+        const n = parseInt(v, 10);
+        if (isNaN(n)) return fallback;
+        return Math.max(lo, Math.min(hi, n));
+    }
+
+    function maskEmail(value) {
+        const s = String(value || "");
+        const at = s.indexOf("@");
+        if (at <= 1) return s ? "***" : "(empty)";
+        return s.slice(0, 1) + "***" + s.slice(at);
+    }
+
+    function loadSettings() {
+        disc.email = String(setting("tapoStandalone", "email", ""));
+        disc.password = String(setting("tapoStandalone", "password", ""));
+
+        disc.l530Enabled = asBool(setting("tapoStandalone", "l530Enabled", "true"), true);
+        disc.l530Name = String(setting("tapoStandalone", "l530Name", "Tapo L530"));
+        disc.l530Ip = String(setting("tapoStandalone", "l530Ip", ""));
+
+        disc.p110Enabled = asBool(setting("tapoStandalone", "p110Enabled", "true"), true);
+        disc.p110Name = String(setting("tapoStandalone", "p110Name", "Tapo P110"));
+        disc.p110Ip = String(setting("tapoStandalone", "p110Ip", ""));
+
+        disc.frameSkip = clampInt(setting("tapoStandalone", "frameSkip", "6"), 6, 1, 60);
+        disc.minDelta = clampInt(setting("tapoStandalone", "minDelta", "2"), 2, 0, 100);
+        disc.reconnectMs = clampInt(setting("tapoStandalone", "reconnectMs", "3000"), 3000, 500, 60000);
+
+        const level = String(setting("tapoStandalone", "logLevel", "Debug"));
+        disc.logLevel = (level === "Normal" || level === "Debug" || level === "Trace") ? level : "Debug";
+    }
+
+    function removeControllers() {
+        const copy = [];
+        for (const cont of service.controllers) copy.push(cont);
+        for (const cont of copy) service.removeController(cont);
+    }
+
+    function registerConfiguredDevices() {
+        const configs = [
+            { enabled: disc.l530Enabled, type: "l530", name: String(disc.l530Name || "Tapo L530").trim(), ip: String(disc.l530Ip || "").trim() },
+            { enabled: disc.p110Enabled, type: "p110", name: String(disc.p110Name || "Tapo P110").trim(), ip: String(disc.p110Ip || "").trim() }
+        ];
+
+        let configured = 0;
+
+        for (const cfg of configs) {
+            if (!cfg.enabled) {
+                service.log("[Tapo Standalone][SERVICE] Skipping disabled " + cfg.type.toUpperCase());
                 continue;
             }
 
+            if (!cfg.ip) {
+                service.log("[Tapo Standalone][SERVICE] " + cfg.type.toUpperCase() + " enabled but IP is empty; not registering.");
+                continue;
+            }
+
+            const displayName = cfg.name || ("Tapo " + cfg.type.toUpperCase());
+
             disc.Discovered({
-                id: "tapo-direct:" + type + ":" + ip,
-                name: String(cfg.name || ("Tapo " + type.toUpperCase())),
-                deviceType: type,
-                ip: ip
+                id: "tapo-standalone:" + cfg.type + ":" + cfg.ip,
+                name: displayName,
+                deviceName: displayName,
+                deviceType: cfg.type,
+                ip: cfg.ip,
+                email: disc.email,
+                password: disc.password,
+                frameSkip: disc.frameSkip,
+                minDelta: disc.minDelta,
+                reconnectMs: disc.reconnectMs,
+                logLevel: disc.logLevel
             });
+
+            configured++;
+            service.log("[Tapo Standalone][SERVICE] Registered " + displayName + " [" + cfg.type.toUpperCase() + "] @ " + cfg.ip);
         }
+
+        service.log("[Tapo Standalone][SERVICE] Registration complete: " + configured + " device(s).");
+    }
+
+    this.Initialize = function() {
+        loadSettings();
+
+        service.log("[Tapo Standalone][SERVICE] ========================================");
+        service.log("[Tapo Standalone][SERVICE] v0.2.0 standalone KLAP v2");
+        service.log("[Tapo Standalone][SERVICE] Publisher: " + Publisher());
+        service.log("[Tapo Standalone][SERVICE] Account: " + maskEmail(disc.email) + " (password hidden)");
+        service.log("[Tapo Standalone][SERVICE] frameSkip=" + disc.frameSkip + " minDelta=" + disc.minDelta + " reconnectMs=" + disc.reconnectMs + " logLevel=" + disc.logLevel);
+        service.log("[Tapo Standalone][SERVICE] ========================================");
+
+        registerConfiguredDevices();
     };
 
     this.Update = function() {
@@ -128,6 +162,7 @@ export function DiscoveryService() {
             const bridge = cont.obj;
             if (!bridge.announced) {
                 bridge.announced = true;
+                service.log("[Tapo Standalone][SERVICE] Announcing device: " + bridge.name + " [" + bridge.deviceType.toUpperCase() + "] @ " + bridge.ip);
                 service.announceController(bridge);
             }
         }
@@ -138,14 +173,70 @@ export function DiscoveryService() {
             service.addController(new TapoDirectController(value));
         }
     };
+
+    this.saveAndReconnect = function(
+        newEmail, newPassword,
+        newL530Enabled, newL530Name, newL530Ip,
+        newP110Enabled, newP110Name, newP110Ip,
+        newFrameSkip, newMinDelta, newReconnectMs, newLogLevel
+    ) {
+        disc.email = String(newEmail || "").trim();
+        disc.password = String(newPassword || "");
+
+        disc.l530Enabled = !!newL530Enabled;
+        disc.l530Name = String(newL530Name || "Tapo L530").trim();
+        disc.l530Ip = String(newL530Ip || "").trim();
+
+        disc.p110Enabled = !!newP110Enabled;
+        disc.p110Name = String(newP110Name || "Tapo P110").trim();
+        disc.p110Ip = String(newP110Ip || "").trim();
+
+        disc.frameSkip = clampInt(newFrameSkip, 6, 1, 60);
+        disc.minDelta = clampInt(newMinDelta, 2, 0, 100);
+        disc.reconnectMs = clampInt(newReconnectMs, 3000, 500, 60000);
+
+        const level = String(newLogLevel || "Debug");
+        disc.logLevel = (level === "Normal" || level === "Debug" || level === "Trace") ? level : "Debug";
+
+        service.saveSetting("tapoStandalone", "email", disc.email);
+        service.saveSetting("tapoStandalone", "password", disc.password);
+
+        service.saveSetting("tapoStandalone", "l530Enabled", String(disc.l530Enabled));
+        service.saveSetting("tapoStandalone", "l530Name", disc.l530Name);
+        service.saveSetting("tapoStandalone", "l530Ip", disc.l530Ip);
+
+        service.saveSetting("tapoStandalone", "p110Enabled", String(disc.p110Enabled));
+        service.saveSetting("tapoStandalone", "p110Name", disc.p110Name);
+        service.saveSetting("tapoStandalone", "p110Ip", disc.p110Ip);
+
+        service.saveSetting("tapoStandalone", "frameSkip", String(disc.frameSkip));
+        service.saveSetting("tapoStandalone", "minDelta", String(disc.minDelta));
+        service.saveSetting("tapoStandalone", "reconnectMs", String(disc.reconnectMs));
+        service.saveSetting("tapoStandalone", "logLevel", disc.logLevel);
+
+        service.log("[Tapo Standalone][SERVICE] Settings saved. Account=" + maskEmail(disc.email));
+        service.log("[Tapo Standalone][SERVICE] L530 enabled=" + disc.l530Enabled + " name=" + disc.l530Name + " ip=" + (disc.l530Ip || "(empty)"));
+        service.log("[Tapo Standalone][SERVICE] P110 enabled=" + disc.p110Enabled + " name=" + disc.p110Name + " ip=" + (disc.p110Ip || "(empty)"));
+        service.log("[Tapo Standalone][SERVICE] Rebuilding controllers...");
+
+        removeControllers();
+        registerConfiguredDevices();
+    };
 }
 
 class TapoDirectController {
     constructor(value) {
         this.id = value.id;
         this.name = value.name;
+        this.deviceName = value.deviceName || value.name;
         this.deviceType = value.deviceType;
         this.ip = value.ip;
+        this.email = value.email;
+        this.password = value.password;
+        this.frameSkip = value.frameSkip;
+        this.minDelta = value.minDelta;
+        this.reconnectMs = value.reconnectMs;
+        this.logLevel = value.logLevel;
         this.announced = false;
     }
 }
@@ -178,6 +269,43 @@ let lastBri = -1;
 let lastPlugPower = null;
 
 // =============================================================================
+// STRUCTURED LOGGING
+// =============================================================================
+
+function logRank() {
+    if (controller.logLevel === "Trace") return 3;
+    if (controller.logLevel === "Debug") return 2;
+    return 1;
+}
+
+function logPrefix(area) {
+    return "[Tapo Standalone][" + controller.deviceType.toUpperCase() + "][" + controller.name + "][" + area + "] ";
+}
+
+function logNormal(area, msg) {
+    device.log(logPrefix(area) + msg);
+}
+
+function logDebug(area, msg) {
+    if (logRank() >= 2) device.log(logPrefix(area) + msg);
+}
+
+function logTrace(area, msg) {
+    if (logRank() >= 3) device.log(logPrefix(area) + msg);
+}
+
+function setKlapState(next, reason) {
+    const previous = klapState;
+    klapState = next;
+    logDebug("STATE", previous + " -> " + next + (reason ? " (" + reason + ")" : ""));
+}
+
+function safeJson(value) {
+    try { return JSON.stringify(value); }
+    catch (e) { return "<unserializable>"; }
+}
+
+// =============================================================================
 // LIFECYCLE
 // =============================================================================
 
@@ -185,30 +313,39 @@ export function Initialize() {
     device.setName(controller.name);
     device.addChannel("Tapo", 1);
 
-    device.log("[Tapo Standalone] Device=" + controller.deviceType + " IP=" + controller.ip);
-    device.log("[Tapo Standalone] Direct LAN KLAP v2 on TCP/80");
+    logNormal("INIT", "================================================");
+    logNormal("INIT", "Device name=" + controller.name);
+    logNormal("INIT", "Model=" + controller.deviceType.toUpperCase() + " target=" + controller.ip + ":80");
+    logNormal("INIT", "Transport=TCP KLAP-v2 direct LAN");
+    logNormal("INIT", "frameSkip=" + controller.frameSkip + " minDelta=" + controller.minDelta + " reconnectMs=" + controller.reconnectMs + " logLevel=" + controller.logLevel);
+    logNormal("INIT", "Account configured=" + (!!controller.email) + " password configured=" + (!!controller.password));
+    logNormal("INIT", "================================================");
 
-    if (!TAPO_EMAIL || !TAPO_PASSWORD || TAPO_EMAIL.indexOf("your-tapo-email") >= 0) {
-        device.log("[Tapo Standalone] ERROR: edit TAPO_EMAIL / TAPO_PASSWORD at top of plugin");
+    if (!controller.email || !controller.password) {
+        logNormal("AUTH", "ERROR: Tapo account email/password missing. Open Tapo Standalone settings and save.");
         klapState = "failed";
         return;
     }
 
-    authHash = sha256(concatBytes(sha1(utf8(TAPO_EMAIL)), sha1(utf8(TAPO_PASSWORD))));
+    logDebug("AUTH", "Deriving KLAP auth hash; credential values are hidden.");
+    authHash = sha256(concatBytes(sha1(utf8(controller.email)), sha1(utf8(controller.password))));
+    logDebug("AUTH", "Auth hash derived; bytes=" + authHash.length);
+
     openSocket();
 }
 
 export function Render() {
     const now = Date.now();
 
-    if (!socketConnected && now >= reconnectAt && klapState !== "connecting") {
+    if (!socketConnected && now >= reconnectAt && klapState !== "connecting" && klapState !== "failed") {
+        logDebug("RECOVERY", "Reconnect timer expired; opening socket.");
         openSocket();
     }
 
     if (klapState !== "ready" || requestBusy) return;
 
     frameCounter++;
-    if (frameCounter < FRAME_SKIP) return;
+    if (frameCounter < controller.frameSkip) return;
     frameCounter = 0;
 
     if (controller.deviceType === "l530") {
@@ -239,38 +376,40 @@ function openSocket() {
     rxBuffer = [];
     pendingHttp = null;
     requestBusy = false;
-    klapState = "connecting";
+    setKlapState("connecting", "opening TCP socket");
 
     socket = tcp.createSocket();
 
     socket.on("connected", function() {
         socketConnected = true;
-        device.log("[Tapo Standalone] TCP connected " + controller.ip + ":80");
+        logNormal("TCP", "Connected to " + controller.ip + ":80");
+        logDebug("TCP", "Starting KLAP authentication on persistent connection.");
         beginHandshake1();
     });
 
     socket.on("message", function(data) {
         const bytes = normalizeBytes(data);
+        logTrace("TCP", "RX chunk bytes=" + bytes.length + " bufferedBefore=" + rxBuffer.length);
         rxBuffer = rxBuffer.concat(bytes);
         parseHttpResponses();
     });
 
     socket.on("disconnected", function() {
-        device.log("[Tapo Standalone] TCP disconnected; reconnect scheduled");
+        logNormal("TCP", "Disconnected; reconnect scheduled in " + controller.reconnectMs + " ms.");
         socketConnected = false;
         klapState = "idle";
         pendingHttp = null;
         requestBusy = false;
-        reconnectAt = Date.now() + RECONNECT_MS;
+        reconnectAt = Date.now() + controller.reconnectMs;
     });
 
     socket.on("error", function(err) {
-        device.log("[Tapo Standalone] TCP error: " + err);
+        logNormal("TCP", "Socket error: " + err + "; reconnect in " + controller.reconnectMs + " ms.");
         socketConnected = false;
         klapState = "idle";
         pendingHttp = null;
         requestBusy = false;
-        reconnectAt = Date.now() + RECONNECT_MS;
+        reconnectAt = Date.now() + controller.reconnectMs;
     });
 
     socket.connect(controller.ip, 80);
@@ -295,7 +434,8 @@ function sendHttpPost(path, body, cookie, callback) {
     if (cookie) header += "Cookie: " + cookie + "\r\n";
     header += "\r\n";
 
-    pendingHttp = { callback: callback };
+    logTrace("HTTP", "TX POST " + path + " bodyBytes=" + bodyBytes.length + " cookie=" + (cookie ? "present" : "none"));
+    pendingHttp = { callback: callback, path: path, startedAt: Date.now() };
     socket.send(concatBytes(utf8(header), bodyBytes));
 }
 
@@ -329,6 +469,17 @@ function parseHttpResponses() {
 
         const pending = pendingHttp;
         pendingHttp = null;
+
+        const elapsed = pending && pending.startedAt ? (Date.now() - pending.startedAt) : -1;
+        logTrace(
+            "HTTP",
+            "RX " + (pending ? pending.path : "<unknown>") +
+            " status=" + status +
+            " bodyBytes=" + body.length +
+            " contentLength=" + contentLength +
+            " setCookie=" + (headers["set-cookie"] ? "present" : "none") +
+            (elapsed >= 0 ? " elapsedMs=" + elapsed : "")
+        );
         if (pending && pending.callback) {
             pending.callback(status, headers, body);
         }
@@ -340,12 +491,13 @@ function parseHttpResponses() {
 // =============================================================================
 
 function beginHandshake1() {
-    klapState = "h1";
+    setKlapState("h1", "handshake1");
     localSeed = randomBytes(16);
     remoteSeed = null;
     sessionCookie = "";
 
-    device.log("[Tapo Standalone] KLAP handshake1");
+    logNormal("KLAP", "handshake1 -> POST /app/handshake1");
+    logTrace("KLAP", "handshake1 localSeedBytes=" + localSeed.length);
 
     sendHttpPost("/app/handshake1", localSeed, "", function(status, headers, body) {
         if (status !== 200 || body.length !== 48) {
@@ -375,16 +527,16 @@ function beginHandshake1() {
 }
 
 function beginHandshake2() {
-    klapState = "h2";
+    setKlapState("h2", "handshake2");
     const proof = sha256(concatBytes(remoteSeed, localSeed, authHash));
 
-    device.log("[Tapo Standalone] KLAP handshake2");
+    logNormal("KLAP", "handshake2 -> POST /app/handshake2; session cookie present=" + (!!sessionCookie));
 
     sendHttpPost("/app/handshake2", proof, sessionCookie, function(status) {
         if (status !== 200) {
             // Newer firmware using TPAP often rejects KLAP here/earlier.
             if (status === 403) {
-                device.log("[Tapo Standalone] Device rejected KLAP (HTTP 403). Firmware may require TPAP/SPAKE2+");
+                logNormal("KLAP", "HTTP 403 during handshake2. Firmware may require TPAP/SPAKE2+.");
                 klapState = "failed";
                 return;
             }
@@ -393,13 +545,14 @@ function beginHandshake2() {
         }
 
         deriveKlapKeys();
-        klapState = "ready";
+        setKlapState("ready", "KLAP session established");
         requestBusy = false;
-        device.log("[Tapo Standalone] KLAP READY - direct control active");
+        logNormal("KLAP", "READY - encrypted direct control active; sequence=" + sequence);
     });
 }
 
 function deriveKlapKeys() {
+    logDebug("KLAP", "Deriving session AES/signature/IV material; key values hidden.");
     const common = concatBytes(localSeed, remoteSeed, authHash);
 
     aesKey = sha256(concatBytes(utf8("lsk"), common)).slice(0, 16);
@@ -409,13 +562,14 @@ function deriveKlapKeys() {
     sequence = bytesToSignedInt32BE(fullIv.slice(28, 32));
 
     sigKey = sha256(concatBytes(utf8("ldk"), common)).slice(0, 28);
+    logDebug("KLAP", "Session material ready: aesKeyBytes=" + aesKey.length + " ivPrefixBytes=" + ivPrefix.length + " sigKeyBytes=" + sigKey.length + " sequence=" + sequence);
 }
 
 function failAndReconnect(reason) {
-    device.log("[Tapo Standalone] " + reason);
+    logNormal("RECOVERY", reason + "; reconnect scheduled in " + controller.reconnectMs + " ms.");
     klapState = "idle";
     requestBusy = false;
-    reconnectAt = Date.now() + RECONNECT_MS;
+    reconnectAt = Date.now() + controller.reconnectMs;
     try { if (socket) socket.close(); } catch (e) {}
 }
 
@@ -432,19 +586,21 @@ function sendKlapJson(obj, callback) {
     sequence = (sequence + 1) | 0;
     const seqBytes = signedInt32ToBytesBE(sequence);
     const iv = concatBytes(ivPrefix, seqBytes);
+    logDebug("CMD", "payload=" + safeJson(obj));
     const plain = utf8(JSON.stringify(obj));
     const padded = pkcs7Pad(plain, 16);
     const cipher = aes128CbcEncrypt(padded, aesKey, iv);
     const signature = sha256(concatBytes(sigKey, seqBytes, cipher));
     const body = concatBytes(signature, cipher);
     const path = "/app/request?seq=" + sequence;
+    logTrace("KLAP", "Encrypted request seq=" + sequence + " plainBytes=" + plain.length + " paddedBytes=" + padded.length + " cipherBytes=" + cipher.length + " signedBodyBytes=" + body.length);
 
     sendHttpPost(path, body, sessionCookie, function(status) {
         if (status !== 200) {
             device.log("[Tapo Standalone] KLAP request HTTP=" + status + " -> rehandshake");
             klapState = "idle";
             requestBusy = false;
-            reconnectAt = Date.now() + RECONNECT_MS;
+            reconnectAt = Date.now() + controller.reconnectMs;
             try { if (socket) socket.close(); } catch (e) {}
             if (callback) callback(false, status);
             return;
@@ -477,11 +633,12 @@ function renderL530() {
     const satDiff = lastSat < 0 ? 100 : Math.abs(sat - lastSat);
     const briDiff = lastBri < 0 ? 100 : Math.abs(bri - lastBri);
 
-    if (hueDiff < MIN_DELTA && satDiff < MIN_DELTA && briDiff < MIN_DELTA) return;
+    if (hueDiff < controller.minDelta && satDiff < controller.minDelta && briDiff < controller.minDelta) return;
 
     lastHue = hue;
     lastSat = sat;
     lastBri = bri;
+    logDebug("RENDER", "L530 HSV h=" + hue + " s=" + sat + " b=" + bri + " delta(h/s/b)=" + hueDiff + "/" + satDiff + "/" + briDiff);
     requestBusy = true;
 
     const params = bri <= 0
@@ -496,7 +653,7 @@ function renderL530() {
 
     sendKlapJson({ method: "set_device_info", params: params }, function(ok) {
         requestBusy = false;
-        if (!ok) device.log("[Tapo Standalone] L530 update failed");
+        if (!ok) logNormal("CMD", "L530 update failed.");
     });
 }
 
@@ -511,7 +668,7 @@ function renderP110() {
         params: { device_on: desired }
     }, function(ok) {
         requestBusy = false;
-        if (!ok) device.log("[Tapo Standalone] P110 update failed");
+        if (!ok) logNormal("CMD", "P110 update failed.");
     });
 }
 

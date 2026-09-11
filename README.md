@@ -1,119 +1,87 @@
 # SignalRGB Tapo Standalone
 
-Standalone **SignalRGB network plugin** for controlling TP-Link Tapo devices directly over the local network.
+Direct LAN TP-Link Tapo plugin for SignalRGB.
 
-No `tapo-rest`, no Rust bridge, no localhost service, and no API key server.
+## v0.2.0
 
-## Supported devices
+All configuration is done from the **Tapo Standalone service page** inside SignalRGB.
 
-Initial target support:
+Nothing sensitive is embedded in the JavaScript source.
 
-- **Tapo L530** — power, brightness, hue and saturation
-- **Tapo P110** — power on/off
+Supported:
+- Tapo L530 — RGB, brightness, power
+- Tapo P110 — power
 
-The plugin implements the **Tapo KLAP v2** local protocol directly inside SignalRGB:
+Transport:
+- TCP port 80
+- KLAP v2
+- AES-128-CBC encrypted application requests
 
-1. TCP connection to the device on port 80
-2. `POST /app/handshake1`
-3. `POST /app/handshake2`
-4. KLAP key derivation
-5. AES-128-CBC encrypted `POST /app/request?seq=...`
-6. `set_device_info` commands
-
-> Some newer Tapo firmware uses **TPAP/SPAKE2+** instead of KLAP. TPAP is not implemented in this first release.
-
-## Requirements
-
-- Windows with SignalRGB
-- SignalRGB version that supports the `@SignalRGB/tcp` network module
-- Tapo devices reachable from the PC over the LAN
-- TCP port 80 reachable on each Tapo device
-- Tapo account email/password used by those devices
-- Static/reserved IP addresses are strongly recommended
+No tapo-rest, Rust bridge, localhost service or API-key server.
 
 ## Install
 
-1. Open `TapoStandalone.js`.
-2. Edit the configuration block at the top:
+Copy both files:
+- `TapoStandalone.js`
+- `TapoStandalone.qml`
 
-```js
-const TAPO_EMAIL = "your-tapo-email@example.com";
-const TAPO_PASSWORD = "YOUR_TAPO_PASSWORD";
+into SignalRGB's custom plugin folder and restart SignalRGB.
 
-const TAPO_DEVICES = [
-    { enabled: true, type: "l530", name: "Tapo L530", ip: "192.168.1.50" },
-    { enabled: true, type: "p110", name: "Tapo P110", ip: "192.168.1.51" }
-];
-```
+## Settings
 
-3. Put `TapoStandalone.js` in your SignalRGB user plugin location.
-4. Fully exit SignalRGB and start it again.
-5. Enable the discovered Tapo device(s).
+The Tapo Standalone page contains:
+- Tapo email/password
+- L530 enable toggle
+- L530 visible device name
+- L530 IP
+- P110 enable toggle
+- P110 visible device name
+- P110 IP
+- Frame Skip
+- Min Delta
+- Reconnect interval
+- Normal / Debug / Trace log level
 
-SignalRGB's documentation describes network plugins as `Type() === "network"` plugins using `@SignalRGB/tcp`.
+Press **SAVE SETTINGS & RECONNECT** after changes.
 
-## Expected log
+The device names entered here are used as the actual announced SignalRGB names, for example `Salon Ampul` and `Masa Prizi`.
 
-A successful KLAP session should look similar to:
+## Logging
 
-```text
-[Tapo Standalone] Device=l530 IP=192.168.1.50
-[Tapo Standalone] Direct LAN KLAP v2 TCP/80
-[Tapo Standalone] TCP connected 192.168.1.50:80
-[Tapo Standalone] KLAP handshake1
-[Tapo Standalone] KLAP handshake2
-[Tapo Standalone] KLAP READY
-```
+Normal:
+- lifecycle
+- connection result
+- authentication errors
 
-## L530 behavior
+Debug:
+- KLAP state transitions
+- handshake stages
+- command payloads
+- reconnect behavior
 
-The plugin maps one SignalRGB canvas pixel to the bulb.
+Trace:
+- TCP chunk sizes
+- HTTP packet sizes
+- response timing
+- content lengths
+- cookie presence (never the value)
+- KLAP sequence numbers
+- encryption buffer sizes
 
-It sends a `set_device_info` request containing:
+Passwords, session keys, IV values and cookie values are never logged.
 
-- `device_on`
-- `brightness`
-- `hue`
-- `saturation`
-- `color_temp: 0`
+## Publisher / Third-party classification
 
-Updates are rate-limited with `FRAME_SKIP` to avoid flooding the bulb.
+The plugin metadata is:
+- Name: `Tapo Standalone`
+- Publisher: `Ruzgar Labs`
 
-## P110 behavior
+SignalRGB itself controls whether user-installed plugins are displayed under its third-party/custom-service area. A JavaScript plugin cannot legitimately mark itself as an official first-party SignalRGB plugin. Official placement requires acceptance into SignalRGB's official plugin distribution.
 
-P110 is not an RGB device. It exposes a **P110 Power** control in SignalRGB:
+## Firmware note
 
-- `On`
-- `Off`
-
-## Security
-
-Your Tapo account password is currently stored as plaintext in your local JavaScript file.
-
-Do **not** commit your real credentials or private LAN configuration to a public GitHub repository.
-
-Before publishing, keep the placeholder values in the repository and put real values only in your local installed copy.
-
-See [SECURITY.md](SECURITY.md).
-
-## Known limitations
-
-- KLAP v2 only.
-- TPAP/SPAKE2+ is not implemented.
-- Device auto-discovery is not implemented; IPs are configured manually.
-- Encrypted responses are not currently parsed for command-level error codes; HTTP/session failures are detected.
-- If DHCP changes the device IP, update the config or reserve an address in your router.
-
-## Development
-
-Syntax check:
-
-```powershell
-./scripts/check-syntax.ps1
-```
-
-The GitHub Actions workflow performs the same JavaScript syntax validation.
+Some newer Tapo firmware uses TPAP/SPAKE2+ instead of KLAP v2. TPAP is not implemented yet.
 
 ## License
 
-MIT
+MIT.

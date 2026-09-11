@@ -1,13 +1,14 @@
 # Changelog
 
-## 0.1.0
+## 0.2.0
+- Added native TapoStandalone.qml configuration page.
+- Removed embedded email/password/device IP configuration.
+- Persistent SignalRGB service settings.
+- Custom visible names for L530 and P110.
+- Added Normal, Debug and Trace logging.
+- Added detailed TCP, HTTP, KLAP, command and recovery diagnostics.
+- Password/session keys/cookie values are never logged.
+- Publisher metadata changed to Ruzgar Labs.
 
-- Initial standalone SignalRGB plugin repository.
-- Removed dependency on tapo-rest.
-- Direct TCP port 80 communication.
-- KLAP v2 handshake and session key derivation.
-- AES-128-CBC encrypted requests.
-- L530 color/brightness/power support.
-- P110 power support.
-- Manual per-device IP configuration.
-- Automatic reconnect after transport failure.
+## 0.1.0
+- Initial standalone KLAP v2 proof of concept.
