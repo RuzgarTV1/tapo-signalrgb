@@ -2,33 +2,25 @@
 
 ## Static checks
 
-- JavaScript module syntax: passed Node.js 24.13.1 `--check`.
-- QML: passed a balanced-delimiter scan and a scan confirming there are no
-  backend/controller calls or edit/click callbacks. Qt `qmllint` was not
-  available, so the QML was not compiled by a Qt engine.
-- ZIP: opened and enumerated after creation.
-- Secret scan: checked that no real email address, password, API key, session
-  cookie or device IP from prior logs is included.
+- JavaScript module syntax: checked with Node.js 24.13.1 `--check`.
+- QML: checked for balanced delimiters, a masked password field, a single bounded save action, and absence of direct service/controller/process calls.
+- Embedded images: both exported base64 payloads decode from generated 512×512 PNG source assets and exceed the minimum sanity threshold.
+- Controller metadata: checked for explicit Tapo/TP-Link model and image fields.
+- Secret scan: no configured email, password, API key, session cookie, or real device IPv4 address is included.
+- ZIP: reopened and enumerated after creation.
+
+Qt `qmllint` was not available, so QML was not compiled by a Qt engine.
 
 ## Deterministic crypto checks
 
-The bundled pure-JavaScript primitives are tested against standard vectors:
-
-- SHA-1 of `abc`
-- SHA-256 of `abc`
-- AES-128 single-block encrypt/decrypt
-- AES-128-CBC encrypt/decrypt with PKCS#7 padding
-
-All listed deterministic checks passed on 2026-09-12. The CBC output also
-matched Node.js's built-in AES-128-CBC implementation for the same key, IV and
-plaintext.
+The bundled pure-JavaScript primitives are tested against standard vectors: SHA-1 of `abc`, SHA-256 of `abc`, AES-128 single-block encrypt/decrypt, and AES-128-CBC encrypt/decrypt with PKCS#7 padding. The CBC output is also compared with Node.js AES-128-CBC for the same input.
 
 ## Not validated here
 
 - SignalRGB startup with this package installed
-- device discovery/announcement in the user's installed SignalRGB build
+- appearance of the names/images in the user's SignalRGB build
 - live TCP/KLAP authentication with a physical L530 or P110
-- lighting accuracy, latency, reconnect behavior or firmware coverage
+- lighting accuracy, latency, reconnect behavior, or firmware coverage
+- encryption-at-rest behavior of SignalRGB service settings
 
-Passing static checks means the files are structurally consistent; it is not a
-runtime guarantee.
+Passing static checks means the package is structurally consistent; it is not a runtime guarantee.
